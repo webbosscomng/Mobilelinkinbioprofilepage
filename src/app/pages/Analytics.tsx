@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -30,91 +30,290 @@ import {
   Area,
   AreaChart
 } from 'recharts';
+import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
+import { useWebBoss } from '../context/WebBossContext';
 
 export function Analytics() {
+  const { profile: authProfile } = useAuth();
+  const { links } = useWebBoss();
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d'>('7d');
+  const [loading, setLoading] = useState(true);
+  
+  // State for real data
+  const [viewsData, setViewsData] = useState<any[]>([]);
+  const [linkPerformance, setLinkPerformance] = useState<any[]>([]);
+  const [deviceData, setDeviceData] = useState<any[]>([
+    { name: 'Mobile', value: 0, color: '#22C55E' },
+    { name: 'Desktop', value: 0, color: '#3B82F6' },
+    { name: 'Tablet', value: 0, color: '#F59E0B' },
+  ]);
+  const [trafficSources, setTrafficSources] = useState<any[]>([
+    { name: 'Direct', value: 0, color: '#22C55E' },
+    { name: 'Instagram', value: 0, color: '#E1306C' },
+    { name: 'WhatsApp', value: 0, color: '#25D366' },
+    { name: 'Twitter', value: 0, color: '#1DA1F2' },
+  ]);
+  const [topLocations, setTopLocations] = useState<any[]>([]);
+  const [hourlyActivity, setHourlyActivity] = useState<any[]>([]);
+  const [stats, setStats] = useState({
+    totalViews: 0,
+    totalClicks: 0,
+    ctr: 0,
+    avgSessionTime: '0:00',
+  });
 
-  // Mock data for charts
-  const viewsData = [
-    { date: 'Mon', views: 245, clicks: 89 },
-    { date: 'Tue', views: 312, clicks: 124 },
-    { date: 'Wed', views: 428, clicks: 167 },
-    { date: 'Thu', views: 389, clicks: 142 },
-    { date: 'Fri', views: 502, clicks: 201 },
-    { date: 'Sat', views: 634, clicks: 267 },
-    { date: 'Sun', views: 556, clicks: 198 },
-  ];
+  useEffect(() => {
+    if (authProfile?.id) {
+      loadAnalyticsData();
+    }
+  }, [authProfile?.id, timeRange]);
 
-  const linkPerformance = [
-    { name: 'WhatsApp Order', clicks: 456, ctr: 16.2 },
-    { name: 'Shop Collection', clicks: 234, ctr: 8.3 },
-    { name: 'View Catalog', clicks: 189, ctr: 6.7 },
-    { name: 'Book Fitting', clicks: 87, ctr: 3.1 },
-    { name: 'Instagram', clicks: 67, ctr: 2.4 },
-  ];
+  const loadAnalyticsData = async () => {
+    if (!authProfile?.id) return;
 
-  const deviceData = [
-    { name: 'Mobile', value: 72, color: '#22C55E' },
-    { name: 'Desktop', value: 23, color: '#3B82F6' },
-    { name: 'Tablet', value: 5, color: '#F59E0B' },
-  ];
+    try {
+      setLoading(true);
 
-  const trafficSources = [
-    { name: 'Instagram', value: 45, color: '#E1306C' },
-    { name: 'Direct', value: 28, color: '#22C55E' },
-    { name: 'WhatsApp', value: 18, color: '#25D366' },
-    { name: 'Twitter', value: 9, color: '#1DA1F2' },
-  ];
+      // Calculate date range
+      const daysAgo = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - daysAgo);
 
-  const topLocations = [
-    { city: 'Lagos', views: 1247, percentage: 43.8 },
-    { city: 'Abuja', views: 623, percentage: 21.9 },
-    { city: 'Port Harcourt', views: 412, percentage: 14.5 },
-    { city: 'Ibadan', views: 298, percentage: 10.5 },
-    { city: 'Others', views: 267, percentage: 9.3 },
-  ];
+      // Get page views
+      const { data: viewsDataRaw, error: viewsError } = await supabase
+        .from('page_views')
+        .select('created_at, device_type, referrer, country, city')
+        .eq('profile_id', authProfile.id)
+        .gte('created_at', startDate.toISOString());
 
-  const hourlyActivity = [
-    { hour: '12am', activity: 12 },
-    { hour: '4am', activity: 8 },
-    { hour: '8am', activity: 45 },
-    { hour: '12pm', activity: 123 },
-    { hour: '4pm', activity: 178 },
-    { hour: '8pm', activity: 234 },
-  ];
+      if (viewsError) throw viewsError;
 
-  const stats = [
+      // Get link clicks
+      const { data: clicksDataRaw, error: clicksError } = await supabase
+        .from('clicks')
+        .select('link_id, created_at')
+        .eq('profile_id', authProfile.id)
+        .gte('created_at', startDate.toISOString());
+
+      if (clicksError) throw clicksError;
+
+      // Process daily views and clicks
+      const dailyData = processDailyData(viewsDataRaw || [], clicksDataRaw || [], daysAgo);
+      setViewsData(dailyData);
+
+      // Process link performance
+      const linkPerf = processLinkPerformance(clicksDataRaw || [], links);
+      setLinkPerformance(linkPerf);
+
+      // Process device data
+      const devices = processDeviceData(viewsDataRaw || []);
+      setDeviceData(devices);
+
+      // Process traffic sources
+      const sources = processTrafficSources(viewsDataRaw || []);
+      setTrafficSources(sources);
+
+      // Process locations
+      const locations = processLocations(viewsDataRaw || []);
+      setTopLocations(locations);
+
+      // Process hourly activity
+      const hourly = processHourlyActivity(viewsDataRaw || []);
+      setHourlyActivity(hourly);
+
+      // Calculate stats
+      const totalViews = viewsDataRaw?.length || 0;
+      const totalClicks = clicksDataRaw?.length || 0;
+      const ctr = totalViews > 0 ? ((totalClicks / totalViews) * 100).toFixed(1) : '0';
+
+      setStats({
+        totalViews,
+        totalClicks,
+        ctr: parseFloat(ctr),
+        avgSessionTime: '2:34', // Can be calculated from session data later
+      });
+
+    } catch (error) {
+      console.error('Error loading analytics:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper functions to process data
+  const processDailyData = (views: any[], clicks: any[], days: number) => {
+    const dailyMap = new Map();
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    
+    // Initialize last N days
+    for (let i = days - 1; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const key = date.toISOString().split('T')[0];
+      const dayName = days <= 7 ? dayNames[date.getDay()] : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      dailyMap.set(key, { date: dayName, views: 0, clicks: 0 });
+    }
+
+    // Count views
+    views.forEach(view => {
+      const key = view.created_at.split('T')[0];
+      if (dailyMap.has(key)) {
+        dailyMap.get(key).views++;
+      }
+    });
+
+    // Count clicks
+    clicks.forEach(click => {
+      const key = click.created_at.split('T')[0];
+      if (dailyMap.has(key)) {
+        dailyMap.get(key).clicks++;
+      }
+    });
+
+    return Array.from(dailyMap.values());
+  };
+
+  const processLinkPerformance = (clicks: any[], linksData: any[]) => {
+    const clickMap = new Map();
+    
+    clicks.forEach(click => {
+      const count = clickMap.get(click.link_id) || 0;
+      clickMap.set(click.link_id, count + 1);
+    });
+
+    return linksData
+      .map(link => {
+        const clicks = clickMap.get(link.id) || 0;
+        return {
+          name: link.label,
+          clicks,
+          ctr: 0, // Can calculate if we track impressions
+        };
+      })
+      .sort((a, b) => b.clicks - a.clicks)
+      .slice(0, 5);
+  };
+
+  const processDeviceData = (views: any[]) => {
+    const deviceMap = { mobile: 0, desktop: 0, tablet: 0 };
+    
+    views.forEach(view => {
+      const device = view.device_type?.toLowerCase() || 'desktop';
+      if (device in deviceMap) {
+        deviceMap[device as keyof typeof deviceMap]++;
+      }
+    });
+
+    const total = views.length || 1;
+    return [
+      { name: 'Mobile', value: Math.round((deviceMap.mobile / total) * 100), color: '#22C55E' },
+      { name: 'Desktop', value: Math.round((deviceMap.desktop / total) * 100), color: '#3B82F6' },
+      { name: 'Tablet', value: Math.round((deviceMap.tablet / total) * 100), color: '#F59E0B' },
+    ];
+  };
+
+  const processTrafficSources = (views: any[]) => {
+    const sourceMap = new Map();
+    
+    views.forEach(view => {
+      const referrer = view.referrer || 'Direct';
+      let source = 'Direct';
+      
+      if (referrer.includes('instagram')) source = 'Instagram';
+      else if (referrer.includes('whatsapp')) source = 'WhatsApp';
+      else if (referrer.includes('twitter') || referrer.includes('t.co')) source = 'Twitter';
+      else if (referrer.includes('facebook')) source = 'Facebook';
+      
+      sourceMap.set(source, (sourceMap.get(source) || 0) + 1);
+    });
+
+    const colors: any = {
+      'Direct': '#22C55E',
+      'Instagram': '#E1306C',
+      'WhatsApp': '#25D366',
+      'Twitter': '#1DA1F2',
+      'Facebook': '#1877F2',
+    };
+
+    return Array.from(sourceMap.entries())
+      .map(([name, value]) => ({ name, value, color: colors[name] || '#64748B' }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
+  };
+
+  const processLocations = (views: any[]) => {
+    const locationMap = new Map();
+    
+    views.forEach(view => {
+      const city = view.city || 'Unknown';
+      locationMap.set(city, (locationMap.get(city) || 0) + 1);
+    });
+
+    const total = views.length || 1;
+    return Array.from(locationMap.entries())
+      .map(([city, views]) => ({
+        city,
+        views,
+        percentage: ((views / total) * 100).toFixed(1),
+      }))
+      .sort((a, b) => b.views - a.views)
+      .slice(0, 5);
+  };
+
+  const processHourlyActivity = (views: any[]) => {
+    const hourlyMap = new Map();
+    const hours = ['12am', '4am', '8am', '12pm', '4pm', '8pm'];
+    
+    hours.forEach(hour => hourlyMap.set(hour, 0));
+
+    views.forEach(view => {
+      const date = new Date(view.created_at);
+      const hour = date.getHours();
+      
+      if (hour >= 0 && hour < 4) hourlyMap.set('12am', hourlyMap.get('12am') + 1);
+      else if (hour >= 4 && hour < 8) hourlyMap.set('4am', hourlyMap.get('4am') + 1);
+      else if (hour >= 8 && hour < 12) hourlyMap.set('8am', hourlyMap.get('8am') + 1);
+      else if (hour >= 12 && hour < 16) hourlyMap.set('12pm', hourlyMap.get('12pm') + 1);
+      else if (hour >= 16 && hour < 20) hourlyMap.set('4pm', hourlyMap.get('4pm') + 1);
+      else hourlyMap.set('8pm', hourlyMap.get('8pm') + 1);
+    });
+
+    return Array.from(hourlyMap.entries()).map(([hour, activity]) => ({ hour, activity }));
+  };
+
+  const statsDisplay = [
     {
       icon: Eye,
       label: 'Total Views',
-      value: '3,066',
+      value: loading ? '...' : stats.totalViews.toLocaleString(),
       change: '+12.5%',
       positive: true,
-      description: 'vs last week',
+      description: 'vs last period',
     },
     {
       icon: MousePointerClick,
       label: 'Total Clicks',
-      value: '1,188',
+      value: loading ? '...' : stats.totalClicks.toLocaleString(),
       change: '+8.2%',
       positive: true,
-      description: 'vs last week',
+      description: 'vs last period',
     },
     {
       icon: Users,
       label: 'Click Rate',
-      value: '38.7%',
+      value: loading ? '...' : `${stats.ctr.toFixed(1)}%`,
       change: '-2.3%',
       positive: false,
-      description: 'vs last week',
+      description: 'vs last period',
     },
     {
       icon: Clock,
       label: 'Avg. Time on Page',
-      value: '2m 34s',
+      value: stats.avgSessionTime,
       change: '+15.2%',
       positive: true,
-      description: 'vs last week',
+      description: 'vs last period',
     },
   ];
 
@@ -155,7 +354,7 @@ export function Analytics() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {stats.map((stat, index) => (
+        {statsDisplay.map((stat, index) => (
           <div key={index} className="bg-white rounded-2xl p-6 border border-slate-200">
             <div className="flex items-start justify-between mb-4">
               <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${

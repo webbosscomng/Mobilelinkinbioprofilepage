@@ -13,8 +13,10 @@ import {
   Plug,
   ShoppingBag,
   Gauge,
-  Sparkles
+  Sparkles,
+  LogOut
 } from 'lucide-react';
+import { useAuth } from '../../../context/AuthContext';
 
 interface MobileNavProps {
   businessName: string;
@@ -23,6 +25,13 @@ interface MobileNavProps {
 
 export function MobileNav({ businessName, businessAvatar }: MobileNavProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const { signOut } = useAuth();
+
+  const handleLogout = async () => {
+    if (confirm('Are you sure you want to logout?')) {
+      await signOut();
+    }
+  };
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Overview', path: '/dashboard' },
@@ -128,8 +137,8 @@ export function MobileNav({ businessName, businessAvatar }: MobileNavProps) {
           </nav>
 
           {/* Upgrade Badge */}
-          <div className="p-4">
-            <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-4 border border-amber-200">
+          <div className="p-4 border-t border-slate-200">
+            <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-4 border border-amber-200 mb-3">
               <div className="flex items-start gap-3">
                 <div className="w-8 h-8 bg-amber-400 rounded-lg flex items-center justify-center flex-shrink-0">
                   <Crown className="w-4 h-4 text-amber-900" />
@@ -143,6 +152,15 @@ export function MobileNav({ businessName, businessAvatar }: MobileNavProps) {
                 </div>
               </div>
             </div>
+
+            {/* Logout Button */}
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Logout</span>
+            </button>
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   User, 
   Mail, 
@@ -17,22 +17,28 @@ import {
   RotateCcw
 } from 'lucide-react';
 import { useWebBoss } from '../context/WebBossContext';
+import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
+import { toast } from 'sonner';
 
 export function Settings() {
-  const { profile, updateProfile, completeOnboarding } = useWebBoss();
+  const { profile, updateProfile } = useWebBoss();
+  const { profile: authProfile, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState<'profile' | 'account' | 'billing' | 'notifications'>('profile');
+  const [loading, setLoading] = useState(false);
   
   const resetOnboarding = () => {
     localStorage.removeItem('webboss_onboarded');
     window.location.reload();
   };
+
   const [profileData, setProfileData] = useState({
-    businessName: "Chioma's Fashion Hub",
-    email: 'chioma@fashionhub.ng',
-    bio: 'Premium African fashion & accessories. Custom orders available.',
-    phone: '+234 801 234 5678',
-    website: 'https://fashionhub.ng',
-    location: 'Lagos, Nigeria',
+    businessName: '',
+    email: '',
+    bio: '',
+    phone: '',
+    website: '',
+    location: '',
   });
 
   const [notifications, setNotifications] = useState({
@@ -43,12 +49,93 @@ export function Settings() {
     marketing: false,
   });
 
+  // Load profile data from context
+  useEffect(() => {
+    if (authProfile) {
+      setProfileData({
+        businessName: profile.name || authProfile.full_name,
+        email: authProfile.email || '',
+        bio: profile.bio || authProfile.bio,
+        phone: authProfile.phone || '',
+        website: '',
+        location: profile.location || authProfile.location || '',
+      });
+    }
+  }, [authProfile, profile]);
+
   const tabs = [
     { id: 'profile' as const, label: 'Profile', icon: User },
     { id: 'account' as const, label: 'Account', icon: Shield },
     { id: 'billing' as const, label: 'Billing', icon: CreditCard },
     { id: 'notifications' as const, label: 'Notifications', icon: Bell },
   ];
+
+  const handleSaveProfile = async () => {
+    setLoading(true);
+    try {
+      await updateProfile({
+        name: profileData.businessName,
+        bio: profileData.bio,
+        location: profileData.location,
+      });
+
+      // Update email and phone directly
+      if (authProfile?.id) {
+        const { error } = await supabase
+          .from('profiles')
+          .update({
+            email: profileData.email,
+            phone: profileData.phone,
+          })
+          .eq('id', authProfile.id);
+
+        if (error) throw error;
+      }
+
+      toast.success('Profile updated successfully!');
+    } catch (error) {
+      console.error('Error saving profile:', error);
+      toast.error('Failed to update profile');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChangePassword = async (currentPassword: string, newPassword: string) => {
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (error) throw error;
+
+      toast.success('Password updated successfully!');
+    } catch (error: any) {
+      console.error('Error changing password:', error);
+      toast.error(error.message || 'Failed to change password');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Delete user data (handled by CASCADE in database)
+      await signOut();
+      toast.success('Account deleted successfully');
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      toast.error('Failed to delete account');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -185,8 +272,12 @@ export function Settings() {
                   <button className="px-4 py-2 text-slate-700 hover:text-slate-900 transition-colors">
                     Cancel
                   </button>
-                  <button className="px-6 py-2 bg-[#22C55E] text-white rounded-xl hover:bg-[#1db954] transition-colors font-medium">
-                    Save Changes
+                  <button
+                    className="px-6 py-2 bg-[#22C55E] text-white rounded-xl hover:bg-[#1db954] transition-colors font-medium"
+                    onClick={handleSaveProfile}
+                    disabled={loading}
+                  >
+                    {loading ? 'Saving...' : 'Save Changes'}
                   </button>
                 </div>
               </div>
@@ -250,7 +341,16 @@ export function Settings() {
                         <p className="text-sm text-slate-600">Last changed 3 months ago</p>
                       </div>
                     </div>
-                    <button className="px-4 py-2 border border-slate-300 rounded-lg hover:bg-white transition-colors text-sm font-medium">
+                    <button
+                      className="px-4 py-2 border border-slate-300 rounded-lg hover:bg-white transition-colors text-sm font-medium"
+                      onClick={() => {
+                        const currentPassword = prompt('Enter your current password:');
+                        const newPassword = prompt('Enter your new password:');
+                        if (currentPassword && newPassword) {
+                          handleChangePassword(currentPassword, newPassword);
+                        }
+                      }}
+                    >
                       Change
                     </button>
                   </div>
@@ -317,9 +417,12 @@ export function Settings() {
                         <p className="font-medium text-red-900">Delete Account</p>
                         <p className="text-sm text-red-700">Permanently delete your account and all data</p>
                       </div>
-                      <button className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium flex items-center gap-2">
-                        <Trash2 className="w-4 h-4" />
-                        Delete
+                      <button
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium flex items-center gap-2"
+                        onClick={handleDeleteAccount}
+                        disabled={loading}
+                      >
+                        {loading ? 'Deleting...' : 'Delete'}
                       </button>
                     </div>
                   </div>

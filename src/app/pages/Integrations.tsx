@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Zap, 
   Check, 
@@ -13,6 +13,9 @@ import {
   TrendingUp,
   Search
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
+import { toast } from 'sonner';
 
 interface Integration {
   id: string;
@@ -25,11 +28,23 @@ interface Integration {
   color: string;
 }
 
+interface DBIntegration {
+  id: string;
+  service_name: string;
+  is_active: boolean;
+  config: any;
+  created_at: string;
+}
+
 export function Integrations() {
+  const { profile: authProfile } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [connectedIntegrations, setConnectedIntegrations] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
 
-  const integrations: Integration[] = [
+  // Available integrations catalog
+  const integrationsCatalog: Integration[] = [
     {
       id: 'mailchimp',
       name: 'Mailchimp',
@@ -122,23 +137,47 @@ export function Integrations() {
     },
   ];
 
+  // Fetch connected integrations from the database
+  useEffect(() => {
+    const fetchConnectedIntegrations = async () => {
+      if (!authProfile) return;
+      const { data, error } = await supabase
+        .from('integrations')
+        .select('service_name')
+        .eq('user_id', authProfile.id)
+        .eq('is_active', true);
+
+      if (error) {
+        toast.error('Failed to fetch connected integrations');
+        setLoading(false);
+        return;
+      }
+
+      const connectedIds = new Set(data.map((integration: DBIntegration) => integration.service_name));
+      setConnectedIntegrations(connectedIds);
+      setLoading(false);
+    };
+
+    fetchConnectedIntegrations();
+  }, [authProfile]);
+
   const categories = [
-    { id: 'all', label: 'All', count: integrations.length },
-    { id: 'marketing', label: 'Marketing', count: integrations.filter(i => i.category === 'marketing').length },
-    { id: 'commerce', label: 'E-commerce', count: integrations.filter(i => i.category === 'commerce').length },
-    { id: 'communication', label: 'Communication', count: integrations.filter(i => i.category === 'communication').length },
-    { id: 'analytics', label: 'Analytics', count: integrations.filter(i => i.category === 'analytics').length },
-    { id: 'payments', label: 'Payments', count: integrations.filter(i => i.category === 'payments').length },
+    { id: 'all', label: 'All', count: integrationsCatalog.length },
+    { id: 'marketing', label: 'Marketing', count: integrationsCatalog.filter(i => i.category === 'marketing').length },
+    { id: 'commerce', label: 'E-commerce', count: integrationsCatalog.filter(i => i.category === 'commerce').length },
+    { id: 'communication', label: 'Communication', count: integrationsCatalog.filter(i => i.category === 'communication').length },
+    { id: 'analytics', label: 'Analytics', count: integrationsCatalog.filter(i => i.category === 'analytics').length },
+    { id: 'payments', label: 'Payments', count: integrationsCatalog.filter(i => i.category === 'payments').length },
   ];
 
-  const filteredIntegrations = integrations.filter(integration => {
+  const filteredIntegrations = integrationsCatalog.filter(integration => {
     const matchesSearch = integration.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          integration.description.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = selectedCategory === 'all' || integration.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
 
-  const connectedCount = integrations.filter(i => i.isConnected).length;
+  const connectedCount = integrationsCatalog.filter(i => connectedIntegrations.has(i.id)).length;
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -159,7 +198,7 @@ export function Integrations() {
             <div className="w-10 h-10 bg-[#22C55E]/10 rounded-xl flex items-center justify-center">
               <Zap className="w-5 h-5 text-[#22C55E]" />
             </div>
-            <p className="text-2xl font-bold text-slate-900">{integrations.length}</p>
+            <p className="text-2xl font-bold text-slate-900">{integrationsCatalog.length}</p>
           </div>
           <p className="text-sm text-slate-600">Available Integrations</p>
         </div>
@@ -240,7 +279,7 @@ export function Integrations() {
                   style={{ color: integration.color }}
                 />
               </div>
-              {integration.isConnected ? (
+              {connectedIntegrations.has(integration.id) ? (
                 <div className="flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-lg text-xs font-semibold">
                   <Check className="w-3 h-3" />
                   Connected
@@ -262,7 +301,7 @@ export function Integrations() {
 
             {/* Actions */}
             <div className="flex items-center gap-2">
-              {integration.isConnected ? (
+              {connectedIntegrations.has(integration.id) ? (
                 <>
                   <button className="flex-1 px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors text-sm font-medium flex items-center justify-center gap-2">
                     <SettingsIcon className="w-4 h-4" />

@@ -10,8 +10,10 @@ import {
   Plug,
   ShoppingBag,
   Gauge,
-  Sparkles
+  Sparkles,
+  LogOut
 } from 'lucide-react';
+import { useAuth } from '../../../context/AuthContext';
 
 interface SidebarProps {
   businessName: string;
@@ -19,6 +21,14 @@ interface SidebarProps {
 }
 
 export function Sidebar({ businessName, businessAvatar }: SidebarProps) {
+  const { signOut } = useAuth();
+
+  const handleLogout = async () => {
+    if (confirm('Are you sure you want to logout?')) {
+      await signOut();
+    }
+  };
+
   const navItems = [
     { icon: LayoutDashboard, label: 'Overview', path: '/dashboard' },
     { icon: Link2, label: 'Links', path: '/dashboard/links' },
@@ -88,7 +98,7 @@ export function Sidebar({ businessName, businessAvatar }: SidebarProps) {
 
       {/* User Profile */}
       <div className="p-4 border-t border-slate-200">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 mb-3">
           <img
             src={businessAvatar}
             alt={businessName}
@@ -99,6 +109,15 @@ export function Sidebar({ businessName, businessAvatar }: SidebarProps) {
             <p className="text-xs text-slate-500">Free Plan</p>
           </div>
         </div>
+        
+        {/* Logout Button */}
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+        >
+          <LogOut className="w-4 h-4" />
+          <span>Logout</span>
+        </button>
       </div>
     </aside>
   );
